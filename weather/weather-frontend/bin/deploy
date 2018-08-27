@@ -1,0 +1,10 @@
+#!/bin/bash
+
+gcloud alpha functions deploy weather-frontend \
+  --verbosity debug \
+  --entry-point F \
+  --memory 128MB \
+  --region us-central1 \
+  --runtime go111 \
+  --timeout 60s \
+  --trigger-http

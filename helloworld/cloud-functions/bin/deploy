@@ -1,0 +1,8 @@
+#!/bin/bash
+
+gcloud alpha functions deploy helloworld \
+  --entry-point F \
+  --memory 128MB \
+  --region us-central1 \
+  --runtime go111 \
+  --trigger-http

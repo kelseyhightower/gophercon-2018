@@ -1,0 +1,6 @@
+GopherCon, Denver, Colorado, USA
+Florida Golang, Orlando, Florida, USA
+Go Northwest, Seattle, Washington, USA
+GothamGo, New York, New York, USA
+CapitalGo, Arlington, Virginia, USA
+Gopherpalooza, San Francisco, California, USA

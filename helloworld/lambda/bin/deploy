@@ -1,0 +1,13 @@
+#!/bin/bash
+
+GOOS=linux go build -o main
+zip deployment.zip main
+
+aws lambda create-function \
+  --region us-west-1 \
+  --function-name helloworld \
+  --zip-file fileb://./deployment.zip \
+  --runtime go1.x \
+  --tracing-config Mode=Active \
+  --role arn:aws:iam::<account-id>:role/<role> \
+  --handler main

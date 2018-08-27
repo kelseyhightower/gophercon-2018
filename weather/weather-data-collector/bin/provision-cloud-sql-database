@@ -1,0 +1,17 @@
+#!/bin/bash
+
+gcloud sql instances create weather \
+  --activation-policy always \
+  --assign-ip \
+  --authorized-networks 0.0.0.0/0 \
+  --availability-type zonal \
+  --no-backup \
+  --database-version POSTGRES_9_6 \
+  --gce-zone us-central1-f \
+  --maintenance-release-channel production \
+  --maintenance-window-day SAT \
+  --maintenance-window-hour 4 \
+  --require-ssl \
+  --storage-size 10GB \
+  --storage-type HDD \
+  --tier db-f1-micro

@@ -1,0 +1,11 @@
+#!/bin/bash
+
+gcloud alpha functions deploy weather-assistant \
+  --verbosity debug \
+  --entry-point F \
+  --memory 128MB \
+  --region us-central1 \
+  --runtime go111 \
+  --timeout 60s \
+  --trigger-http \
+  --set-env-vars "WEATHER_API_URL=https://us-central1-hightowerlabs.cloudfunctions.net/weather-api"

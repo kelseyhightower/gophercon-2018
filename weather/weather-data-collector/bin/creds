@@ -1,0 +1,32 @@
+#!/bin/bash
+
+mkdir -p ${HOME}/.cloud-sql
+
+PASSWORD=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 32 | head -n 1)
+echo "${PASSWORD}" > "${HOME}/.cloud-sql/weather/password"
+
+echo "wrote ${HOME}/.cloud-sql/weather/password"
+
+gcloud sql users create weather \
+  --instance weather \
+  --password ${PASSWORD}
+
+gcloud sql ssl client-certs create client \
+  $HOME/.cloud-sql/weather/client.key \
+  --instance weather
+
+echo "wrote $HOME/.cloud-sql/weather/client.key"
+
+gcloud sql ssl client-certs describe client \
+  --instance weather \
+  --format 'value(cert)' > $HOME/.cloud-sql/weather/client.pem
+
+echo "wrote $HOME/.cloud-sql/weather/client.pem"
+
+gcloud sql instances describe weather \
+  --format 'value(serverCaCert.cert)' > $HOME/.cloud-sql/weather/server.pem
+
+echo "wrote $HOME/.cloud-sql/weather/server.pem"
+
+gsutil cp $HOME/.cloud-sql/weather/* gs://weather-app-config/
+gsutil cp $HOME/.google-maps-api-key gs://weather-app-config/

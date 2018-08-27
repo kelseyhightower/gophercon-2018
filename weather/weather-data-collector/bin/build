@@ -1,0 +1,7 @@
+#!/bin/bash
+
+echo 'CGO_ENABLED=0 GOOS=linux vgo build -getmode=vendor .'
+CGO_ENABLED=0 GOOS=linux vgo build -getmode=vendor .
+
+echo 'gcloud container builds submit -t gcr.io/hightowerlabs/weather-data-collector:0.0.1 .'
+gcloud container builds submit -t gcr.io/hightowerlabs/weather-data-collector:0.0.1 .

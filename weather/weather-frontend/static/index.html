@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html style="height: 100%%;">
+    <head>
+        <title>Weather App</title>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <link rel="icon" href="images/favicon.png">
+        <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css" integrity="sha384-Gn5384xqQ1aoWXA+058RXPxPg6fy4IWvTNh0E263XmFcJlSAwiGgFAW/dAiS6JXm" crossorigin="anonymous">
+<script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/js/bootstrap.min.js" integrity="sha384-JZR6Spejh4U02d8jOt6vLEHfe/JQGiRRSQQxSfFWpi1MquVdAyjUar5+76PVCmYl" crossorigin="anonymous"></script>
+        <script src="https://code.jquery.com/jquery-3.2.1.slim.min.js" integrity="sha384-KJ3o2DKtIkvYIK3UENzmM7KCkRr/rE9/Qpg6aAZGJwFDMVNA/GpGFF93hXpG5KkN" crossorigin="anonymous"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.12.9/umd/popper.min.js" integrity="sha384-ApNbgh9B+Y1QKtv3Rn7W3mgPxhU9K/ScQsAP7hUibX39j7fakFPskvXusvfa0b4Q" crossorigin="anonymous"></script>
+    </head>
+    <body style="height: 100%%; background: black;">
+      <div class="container-fluid h-100">
+        <div class="row justify-content-center align-items-center h-100">
+        <div class="text-center">
+          <h1 class="text-white">{{.Temperature}}&#8457;</h1>
+          <h2 class="text-white">{{.Event}}</h2>
+          <h2 class="text-white">{{.Location}}</h2>
+          <form class="row align-items-center justify-content-center">
+            <div class="form-row align-items-center">
+            <div class="col-auto">
+              <select class="form-control" name="event" id="event-select">
+              {{- range $e := .Events}}
+                <option value="{{$e.Name}}">{{$e.Name}}</option>
+              {{- end}}
+              </select>
+            </div>
+			<div class="col-auto">
+              <button type="submit" class="btn btn-primary">Submit</button>
+            </div>
+            </div>
+          </form>
+          <img src="https://storage.googleapis.com/weather-application/GoCommunity.png" height="140">
+        </div>
+        </div>
+      </div>
+    </body>
+</html>
