@@ -8,11 +8,7 @@ import (
 )
 
 func TestF(t *testing.T) {
-	r, err := http.NewRequest("GET", "/", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-
+	r := httptest.NewRequest("GET", "/", nil)
 	w := httptest.NewRecorder()
 	handler := http.HandlerFunc(F)
 	handler.ServeHTTP(w, r)
