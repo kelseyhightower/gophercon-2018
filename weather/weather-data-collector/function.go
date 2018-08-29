@@ -8,48 +8,27 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"os"
 	"sync"
 
+	"cloud.google.com/go/logging"
 	"cloud.google.com/go/storage"
-	"contrib.go.opencensus.io/exporter/stackdriver"
 	"go.opencensus.io/trace"
 	"googlemaps.github.io/maps"
 
 	_ "github.com/lib/pq"
 )
 
-func init() {
-	config = &configuration{}
-}
-
 var (
-	config *configuration
+	db         *sql.DB
+	logger     *logging.Logger
+	mapsClient *maps.Client
+	once       sync.Once
 )
 
 // configFunc sets the global configuration; it's overridden in tests.
 var configFunc = defaultConfigFunc
-
-type configuration struct {
-	db   *sql.DB
-	mc   *maps.Client
-	once sync.Once
-	err  error
-}
-
-func (c *configuration) Error() error {
-	return c.err
-}
-
-type envError struct {
-	name string
-}
-
-func (e *envError) Error() string {
-	return fmt.Sprintf("%s environment variable unset or missing", e.name)
-}
 
 type HourlyForecast struct {
 	Type       string
@@ -65,21 +44,32 @@ type Period struct {
 }
 
 type PubSubMessage struct {
+	Data []byte `json:"data"`
+}
+
+type WeatherEvent struct {
 	Event    string `json:"event"`
 	Location string `json:"location"`
 }
 
 func F(ctx context.Context, m PubSubMessage) error {
-	config.once.Do(func() { configFunc() })
+	once.Do(func() {
+		if err := configFunc(); err != nil {
+			panic(err)
+		}
+	})
+
+	defer logger.Flush()
+
+	var e WeatherEvent
+	if err := json.Unmarshal(m.Data, &e); err != nil {
+		return err
+	}
 
 	ctx, span := trace.StartSpan(ctx, "weather-data-collector")
 	defer span.End()
 
-	if config.Error() != nil {
-		return config.Error()
-	}
-
-	lat, lng, err := geoFromLocation(ctx, m.Location)
+	lat, lng, err := geoFromLocation(ctx, e.Location)
 	if err != nil {
 		return err
 	}
@@ -89,15 +79,19 @@ func F(ctx context.Context, m PubSubMessage) error {
 		return err
 	}
 
-	return updateDatabase(ctx, m.Event, m.Location, temperature)
+	return updateDatabase(ctx, e.Event, e.Location, temperature)
 }
 
 func updateDatabase(ctx context.Context, event string, location string, temperature int) error {
 	ctx, span := trace.StartSpan(ctx, "cloud-sql")
 	defer span.End()
 
-	log.Printf("setting temperature for %s in %s to %d", event, location, temperature)
-	_, err := config.db.Exec(query, event, location, temperature)
+	logger.Log(logging.Entry{
+		Payload:  fmt.Sprintf("setting temperature for %s in %s to %d", event, location, temperature),
+		Severity: logging.Info,
+	})
+
+	_, err := db.Exec(query, event, location, temperature)
 	return err
 }
 
@@ -106,7 +100,11 @@ func getTemperature(ctx context.Context, lat, lng float64) (int, error) {
 	defer span.End()
 
 	u := fmt.Sprintf("https://api.weather.gov/points/%.4f,%.4f/forecast/hourly", lat, lng)
-	log.Printf("retrieving weather data for (%.4f,%.4f)", lat, lng)
+
+	logger.Log(logging.Entry{
+		Payload:  fmt.Sprintf("retrieving weather data for (%.4f,%.4f)", lat, lng),
+		Severity: logging.Info,
+	})
 
 	request, err := http.NewRequest("GET", u, nil)
 	if err != nil {
@@ -152,7 +150,7 @@ func findPlaceIDFromText(ctx context.Context, location string) (string, error) {
 	ctx, span := trace.StartSpan(ctx, "google-maps-find-place")
 	defer span.End()
 
-	r, err := config.mc.FindPlaceFromText(context.Background(),
+	r, err := mapsClient.FindPlaceFromText(context.Background(),
 		&maps.FindPlaceFromTextRequest{
 			Input:     location,
 			InputType: maps.FindPlaceFromTextInputTypeTextQuery,
@@ -169,7 +167,7 @@ func getLatLng(ctx context.Context, id string) (float64, float64, error) {
 	ctx, span := trace.StartSpan(ctx, "google-maps-place-details")
 	defer span.End()
 
-	r, err := config.mc.PlaceDetails(ctx, &maps.PlaceDetailsRequest{PlaceID: id})
+	r, err := mapsClient.PlaceDetails(ctx, &maps.PlaceDetailsRequest{PlaceID: id})
 	if err != nil {
 		return 0, 0, err
 	}
@@ -177,97 +175,79 @@ func getLatLng(ctx context.Context, id string) (float64, float64, error) {
 	return r.Geometry.Location.Lat, r.Geometry.Location.Lng, nil
 }
 
-func defaultConfigFunc() {
-	ctx := context.Background()
+func defaultConfigFunc() error {
+	var err error
 
-	projectId := os.Getenv("GCP_PROJECT")
-	if projectId == "" {
-		config.err = &envError{"GCP_PROJECT"}
-		return
+	if err := EnableStackdriverTrace(); err != nil {
+		return err
 	}
 
-	stackdriverExporter, err := stackdriver.NewExporter(stackdriver.Options{ProjectID: projectId})
+	logger, err = NewStackdriverLogger()
 	if err != nil {
-		config.err = err
-		return
+		return err
 	}
 
-	trace.RegisterExporter(stackdriverExporter)
-	trace.ApplyConfig(trace.Config{DefaultSampler: trace.AlwaysSample()})
+	ctx := context.Background()
 
 	bucketName := os.Getenv("CONFIGURATION_BUCKET_NAME")
 	if bucketName == "" {
-		config.err = &envError{"CONFIGURATION_BUCKET_NAME"}
-		return
+		return fmt.Errorf("CONFIGURATION_BUCKET_NAME environment variable unset or missing")
 	}
 
 	storageClient, err := storage.NewClient(ctx)
 	if err != nil {
-		config.err = err
-		return
+		return err
 	}
 
 	// Setup the Google maps API client
 	apiKey, err := objectToString(storageClient, bucketName, "maps-api-key")
 	if err != nil {
-        config.err = err
-        return
-    }
-
-	mapClient, err := maps.NewClient(maps.WithAPIKey(apiKey))
-	if err != nil {
-		config.err = err
-		return
+		return err
 	}
 
-	config.mc = mapClient
+	mapsClient, err = maps.NewClient(maps.WithAPIKey(apiKey))
+	if err != nil {
+		return err
+	}
 
 	// Fetch the Cloud SQL credentials and make them
 	// available to the lib/pq database driver.
 	password, err := objectToString(storageClient, bucketName, "password")
 	if err != nil {
-        config.err = err
-        return
-    }
+		return err
+	}
 
 	clientCert, err := objectToTempFile(storageClient, bucketName, "client.pem")
 	if err != nil {
-		config.err = err
-		return
+		return err
 	}
 
 	clientKey, err := objectToTempFile(storageClient, bucketName, "client.key")
 	if err != nil {
-		config.err = err
-		return
+		return err
 	}
 
 	serverCert, err := objectToTempFile(storageClient, bucketName, "server.pem")
 	if err != nil {
-		config.err = err
-		return
+		return err
 	}
-
 
 	// Use environment variables to configure the database connection
 	// parameters because it allows us to leverage both run-time and
 	// deploy time configuration.
 	err = os.Setenv("PGSSLCERT", clientCert)
 	if err != nil {
-		config.err = err
-		return
+		return err
 	}
 
 	err = os.Setenv("PGSSLKEY", clientKey)
 	if err != nil {
-		config.err = err
-		return
+		return err
 	}
 
 	err = os.Setenv("PGSSLROOTCERT", serverCert)
 	if err != nil {
-		config.err = err
-		return
+		return err
 	}
 
 	// Don't store the decrypted database password in an environment
@@ -286,10 +266,9 @@ func defaultConfigFunc() {
 	//
 	dsn := fmt.Sprintf("password='%s'", password)
 
-	db, err := sql.Open("postgres", dsn)
+	db, err = sql.Open("postgres", dsn)
 	if err != nil {
-		config.err = err
-		return
+		return err
 	}
 
 	// Google Cloud Functions ensures a single request per function
@@ -303,21 +282,21 @@ func defaultConfigFunc() {
 	db.SetMaxIdleConns(1)
 	db.SetMaxOpenConns(1)
 
-	config.db = db
+	return nil
 }
 
 func objectToString(client *storage.Client, bucketName, objectName string) (string, error) {
 	ctx := context.Background()
 	o, err := client.Bucket(bucketName).Object(objectName).NewReader(ctx)
-    if err != nil {
-        return "", err
-    }
-    defer o.Close()
+	if err != nil {
+		return "", err
+	}
+	defer o.Close()
 
 	data, err := ioutil.ReadAll(o)
 	if err != nil {
-        return "", err
-    }
+		return "", err
+	}
 
 	return string(bytes.TrimSpace(data)), nil
 }

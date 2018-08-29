@@ -1,0 +1,37 @@
+#!/bin/bash
+
+echo "create capital go weather event ..."
+gcloud alpha scheduler jobs create-pubsub-job capital-go-weather-event \
+  --message-body-from-file events/capital-go.json \
+  --schedule "every 5 minutes" \
+  --topic weather-events
+
+echo "create florida golang weather event ..."
+gcloud alpha scheduler jobs create-pubsub-job florida-golang-weather-event \
+  --message-body-from-file events/florida-golang.json \
+  --schedule "every 5 minutes" \
+  --topic weather-events
+
+echo "creating go northwest weather event ..."
+gcloud alpha scheduler jobs create-pubsub-job go-northwest-weather-event \
+  --message-body-from-file events/go-northwest.json \
+  --schedule "every 5 minutes" \
+  --topic weather-events
+
+echo "creating gophercon weather event ..."
+gcloud alpha scheduler jobs create-pubsub-job gophercon-weather-event \
+  --message-body-from-file events/gophercon.json \
+  --schedule "every 5 minutes" \
+  --topic weather-events
+
+echo "creating gopherpalooza weather event ..."
+gcloud alpha scheduler jobs create-pubsub-job gopherpalooza-weather-event \
+  --message-body-from-file events/gopherpalooza.json \
+  --schedule "every 5 minutes" \
+  --topic weather-events
+
+echo "creating gotham go weather event ..."
+gcloud alpha scheduler jobs create-pubsub-job gotham-go-weather-event \
+  --message-body-from-file events/gotham-go.json \
+  --schedule "every 5 minutes" \
+  --topic weather-events

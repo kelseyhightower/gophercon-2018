@@ -4,49 +4,27 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 	"sync"
 	"text/template"
 
-	"contrib.go.opencensus.io/exporter/stackdriver"
+	"cloud.google.com/go/logging"
 	"contrib.go.opencensus.io/exporter/stackdriver/propagation"
 	"go.opencensus.io/plugin/ochttp"
 	"go.opencensus.io/trace"
 )
 
-func init() {
-	config = &configuration{}
-}
-
 var (
-	config       *configuration
-	httpClient   *http.Client
 	htmlTemplate *template.Template
+	httpClient   *http.Client
+	logger       *logging.Logger
+	once         sync.Once
 )
 
 // configFunc sets the global configuration; it's overridden in tests.
 var configFunc = defaultConfigFunc
-
-type configuration struct {
-	once sync.Once
-	err  error
-}
-
-func (c *configuration) Error() error {
-	return c.err
-}
-
-type envError struct {
-	name string
-}
-
-func (e *envError) Error() string {
-	return fmt.Sprintf("%s environment variable unset or missing", e.name)
-}
 
 type Weather struct {
 	Event       string
@@ -62,12 +40,11 @@ type Event struct {
 }
 
 func F(w http.ResponseWriter, r *http.Request) {
-	config.once.Do(func() { configFunc() })
-	if config.Error() != nil {
-		log.Println(config.Error())
-		http.Error(w, config.Error().Error(), http.StatusBadRequest)
-		return
-	}
+	once.Do(func() {
+		if err := configFunc(); err != nil {
+			panic(err)
+		}
+	})
 
 	ctx := r.Context()
 	var span *trace.Span
@@ -93,7 +70,10 @@ func F(w http.ResponseWriter, r *http.Request) {
 
 	request, err := http.NewRequest("GET", u, nil)
 	if err != nil {
-		log.Println("Error calling the weather api: " + err.Error())
+		logger.Log(logging.Entry{
+			Payload:  "Error calling the weather api: " + err.Error(),
+			Severity: logging.Error,
+		})
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -102,7 +82,10 @@ func F(w http.ResponseWriter, r *http.Request) {
 
 	response, err := httpClient.Do(request)
 	if err != nil {
-		log.Println("Error calling the weather api: " + err.Error())
+		logger.Log(logging.Entry{
+			Payload:  "Error calling the weather api: " + err.Error(),
+			Severity: logging.Error,
+		})
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -110,7 +93,10 @@ func F(w http.ResponseWriter, r *http.Request) {
 	var weatherResponse Weather
 	body, err := ioutil.ReadAll(response.Body)
 	if err != nil {
-		log.Println(err)
+		logger.Log(logging.Entry{
+			Payload:  err.Error(),
+			Severity: logging.Error,
+		})
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -118,7 +104,10 @@ func F(w http.ResponseWriter, r *http.Request) {
 	defer response.Body.Close()
 
 	if err := json.Unmarshal(body, &weatherResponse); err != nil {
-		log.Println(err)
+		logger.Log(logging.Entry{
+			Payload:  err.Error(),
+			Severity: logging.Error,
+		})
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -147,7 +136,10 @@ func F(w http.ResponseWriter, r *http.Request) {
 	var html strings.Builder
 
 	if err := htmlTemplate.Execute(&html, data); err != nil {
-		log.Println(err)
+		logger.Log(logging.Entry{
+			Payload:  err.Error(),
+			Severity: logging.Error,
+		})
 		http.Error(w, "Unable to load the page", http.StatusInternalServerError)
 		return
 	}
@@ -155,27 +147,22 @@ func F(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, html.String())
 }
 
-func defaultConfigFunc() {
-	projectId := os.Getenv("GCP_PROJECT")
-	if projectId == "" {
-		config.err = &envError{"GCP_PROJECT"}
-		return
+func defaultConfigFunc() error {
+	var err error
+
+	if err := EnableStackdriverTrace(); err != nil {
+		return err
 	}
 
-	stackdriverExporter, err := stackdriver.NewExporter(stackdriver.Options{ProjectID: projectId})
+	logger, err = NewStackdriverLogger()
 	if err != nil {
-		config.err = err
-		return
+		return err
 	}
-
-	trace.RegisterExporter(stackdriverExporter)
-	trace.ApplyConfig(trace.Config{DefaultSampler: trace.AlwaysSample()})
 
 	t := template.New("index.html")
 	t, err = t.ParseFiles("static/index.html")
 	if err != nil {
-		config.err = err
-		return
+		return err
 	}
 
 	htmlTemplate = t
@@ -186,4 +173,6 @@ func defaultConfigFunc() {
 			FormatSpanName: func(r *http.Request) string { return "weather-api" },
 		},
 	}
+
+	return nil
 }

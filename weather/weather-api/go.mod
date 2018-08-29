@@ -15,6 +15,6 @@ require (
 	golang.org/x/text v0.3.0 // indirect
 	google.golang.org/api v0.0.0-20180826000528-7954115fcf34 // indirect
 	google.golang.org/appengine v1.1.0 // indirect
-	google.golang.org/genproto v0.0.0-20180817151627-c66870c02cf8 // indirect
+	google.golang.org/genproto v0.0.0-20180817151627-c66870c02cf8
 	google.golang.org/grpc v1.14.0 // indirect
 )

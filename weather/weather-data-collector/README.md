@@ -10,8 +10,10 @@ gsutil mb gs://weather-app-config
 
 
 ```
+# {"event": "GopherCon", "location": "Denver, Colorado, USA"}
+
 gcloud alpha functions call weather-data-collector \
-  --data '{"event": "GopherCon", "location": "Denver, Colorado, USA"}'
+  --data '{"data": "eyJldmVudCI6ICJHb3BoZXJDb24iLCAibG9jYXRpb24iOiAiRGVudmVyLCBDb2xvcmFkbywgVVNBIn0K"}'
 ```
 
 ```

@@ -17,7 +17,7 @@ require (
 	golang.org/x/time v0.0.0-20180412165947-fbb02b2291d2 // indirect
 	google.golang.org/api v0.0.0-20180826000528-7954115fcf34 // indirect
 	google.golang.org/appengine v1.1.0 // indirect
-	google.golang.org/genproto v0.0.0-20180817151627-c66870c02cf8 // indirect
+	google.golang.org/genproto v0.0.0-20180817151627-c66870c02cf8
 	google.golang.org/grpc v1.14.0 // indirect
 	googlemaps.github.io/maps v0.0.0-20180819235337-ce25c900cc16
 )

@@ -8,47 +8,26 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"os"
 	"sync"
 
+	"cloud.google.com/go/logging"
 	"cloud.google.com/go/storage"
-	"contrib.go.opencensus.io/exporter/stackdriver"
 	"contrib.go.opencensus.io/exporter/stackdriver/propagation"
 	"go.opencensus.io/trace"
 
 	_ "github.com/lib/pq"
 )
 
-func init() {
-	config = &configuration{}
-}
-
 var (
-	config *configuration
+	db     *sql.DB
+	logger *logging.Logger
+	once   sync.Once
 )
 
 // configFunc sets the global configuration; it's overridden in tests.
 var configFunc = defaultConfigFunc
-
-type configuration struct {
-	db   *sql.DB
-	once sync.Once
-	err  error
-}
-
-func (c *configuration) Error() error {
-	return c.err
-}
-
-type envError struct {
-	name string
-}
-
-func (e *envError) Error() string {
-	return fmt.Sprintf("%s environment variable unset or missing", e.name)
-}
 
 type Weather struct {
 	Event       string
@@ -57,12 +36,13 @@ type Weather struct {
 }
 
 func F(w http.ResponseWriter, r *http.Request) {
-	config.once.Do(func() { configFunc() })
-	if config.Error() != nil {
-		log.Println(config.Error())
-		http.Error(w, config.Error().Error(), http.StatusBadRequest)
-		return
-	}
+	once.Do(func() {
+		if err := configFunc(); err != nil {
+			panic(err)
+		}
+	})
+
+	defer logger.Flush()
 
 	ctx := r.Context()
 	var span *trace.Span
@@ -79,21 +59,30 @@ func F(w http.ResponseWriter, r *http.Request) {
 
 	event := r.FormValue("event")
 	if event == "" {
-		log.Println("empty event parameter")
+		logger.Log(logging.Entry{
+			Payload:  "missing event query parameter",
+			Severity: logging.Error,
+		})
 		http.Error(w, "missing event query parameter", http.StatusBadRequest)
 		return
 	}
 
 	weather, err := getWeatherForEvent(ctx, event)
 	if err != nil {
-		log.Println(err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		logger.Log(logging.Entry{
+			Payload:  err.Error(),
+			Severity: logging.Error,
+		})
+		http.Error(w, "", http.StatusInternalServerError)
 		return
 	}
 
 	if err := json.NewEncoder(w).Encode(weather); err != nil {
-		log.Println(err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		logger.Log(logging.Entry{
+			Payload:  err.Error(),
+			Severity: logging.Error,
+		})
+		http.Error(w, "", http.StatusInternalServerError)
 		return
 	}
 }
@@ -112,7 +101,7 @@ func getWeatherForEvent(ctx context.Context, event string) (*Weather, error) {
 
 	var w Weather
 
-	err := config.db.QueryRow("SELECT event,location,temperature FROM weather WHERE event = $1", event).Scan(
+	err := db.QueryRow("SELECT event,location,temperature FROM weather WHERE event = $1", event).Scan(
 		&w.Event, &w.Location, &w.Temperature)
 	switch {
 	case err == sql.ErrNoRows:
@@ -124,60 +113,50 @@ func getWeatherForEvent(ctx context.Context, event string) (*Weather, error) {
 	return &w, nil
 }
 
-func defaultConfigFunc() {
-	ctx := context.Background()
+func defaultConfigFunc() error {
+	var err error
 
-	projectId := os.Getenv("GCP_PROJECT")
-	if projectId == "" {
-		config.err = &envError{"GCP_PROJECT"}
-		return
+	if err := EnableStackdriverTrace(); err != nil {
+		return err
 	}
 
-	stackdriverExporter, err := stackdriver.NewExporter(stackdriver.Options{ProjectID: projectId})
+	logger, err = NewStackdriverLogger()
 	if err != nil {
-		config.err = err
-		return
+		return err
 	}
 
-	trace.RegisterExporter(stackdriverExporter)
-	trace.ApplyConfig(trace.Config{DefaultSampler: trace.AlwaysSample()})
+	ctx := context.Background()
 
 	bucketName := os.Getenv("CONFIGURATION_BUCKET_NAME")
 	if bucketName == "" {
-		config.err = &envError{"CONFIGURATION_BUCKET_NAME"}
-		return
+		return fmt.Errorf("CONFIGURATION_BUCKET_NAME environment variable unset or missing")
 	}
 
 	storageClient, err := storage.NewClient(ctx)
 	if err != nil {
-		config.err = err
-		return
+		return err
 	}
 
 	// Fetch the Cloud SQL credentials and make them
 	// available to the lib/pq database driver.
 	password, err := objectToString(storageClient, bucketName, "password")
 	if err != nil {
-		config.err = err
-		return
+		return err
 	}
 
 	clientCert, err := objectToTempFile(storageClient, bucketName, "client.pem")
 	if err != nil {
-		config.err = err
-		return
+		return err
 	}
 
 	clientKey, err := objectToTempFile(storageClient, bucketName, "client.key")
 	if err != nil {
-		config.err = err
-		return
+		return err
 	}
 
 	serverCert, err := objectToTempFile(storageClient, bucketName, "server.pem")
 	if err != nil {
-		config.err = err
-		return
+		return err
 	}
 
 	// Use environment variables to configure the database connection
@@ -185,20 +164,17 @@ func defaultConfigFunc() {
 	// deploy time configuration.
 	err = os.Setenv("PGSSLCERT", clientCert)
 	if err != nil {
-		config.err = err
-		return
+		return err
 	}
 
 	err = os.Setenv("PGSSLKEY", clientKey)
 	if err != nil {
-		config.err = err
-		return
+		return err
 	}
 
 	err = os.Setenv("PGSSLROOTCERT", serverCert)
 	if err != nil {
-		config.err = err
-		return
+		return err
 	}
 
 	// Don't store the decrypted database password in an environment
@@ -217,10 +193,9 @@ func defaultConfigFunc() {
 	//
 	dsn := fmt.Sprintf("password='%s'", password)
 
-	db, err := sql.Open("postgres", dsn)
+	db, err = sql.Open("postgres", dsn)
 	if err != nil {
-		config.err = err
-		return
+		return err
 	}
 
 	// Google Cloud Functions ensures a single request per function
@@ -234,7 +209,7 @@ func defaultConfigFunc() {
 	db.SetMaxIdleConns(1)
 	db.SetMaxOpenConns(1)
 
-	config.db = db
+	return nil
 }
 
 func objectToString(client *storage.Client, bucketName, objectName string) (string, error) {
