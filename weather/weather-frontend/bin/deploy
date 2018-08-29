@@ -7,4 +7,5 @@ gcloud alpha functions deploy weather-frontend \
   --region us-central1 \
   --runtime go111 \
   --timeout 60s \
-  --trigger-http
+  --trigger-http \
+  --set-env-vars "WEATHER_API_URL=https://us-central1-hightowerlabs.cloudfunctions.net/weather-api"

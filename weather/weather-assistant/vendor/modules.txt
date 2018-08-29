@@ -1,8 +1,11 @@
 # cloud.google.com/go v0.26.0
+cloud.google.com/go/logging
+cloud.google.com/go/compute/metadata
+cloud.google.com/go/internal/version
+cloud.google.com/go/logging/apiv2
+cloud.google.com/go/logging/internal
 cloud.google.com/go/monitoring/apiv3
 cloud.google.com/go/trace/apiv2
-cloud.google.com/go/internal/version
-cloud.google.com/go/compute/metadata
 # contrib.go.opencensus.io/exporter/stackdriver v0.6.0
 contrib.go.opencensus.io/exporter/stackdriver
 contrib.go.opencensus.io/exporter/stackdriver/propagation
@@ -38,15 +41,15 @@ github.com/aws/aws-sdk-go/private/protocol
 # github.com/go-ini/ini v1.25.4
 github.com/go-ini/ini
 # github.com/golang/protobuf v1.2.0
+github.com/golang/protobuf/proto
+github.com/golang/protobuf/ptypes
+github.com/golang/protobuf/ptypes/struct
 github.com/golang/protobuf/ptypes/timestamp
 github.com/golang/protobuf/ptypes/wrappers
-github.com/golang/protobuf/proto
-github.com/golang/protobuf/ptypes/struct
-github.com/golang/protobuf/ptypes/empty
-github.com/golang/protobuf/ptypes/duration
 github.com/golang/protobuf/ptypes/any
+github.com/golang/protobuf/ptypes/duration
+github.com/golang/protobuf/ptypes/empty
 github.com/golang/protobuf/protoc-gen-go/descriptor
-github.com/golang/protobuf/ptypes
 # github.com/googleapis/gax-go v2.0.0+incompatible
 github.com/googleapis/gax-go
 # github.com/jmespath/go-jmespath v0.0.0-20160202185014-0b12d6b521d8
@@ -67,9 +70,9 @@ go.opencensus.io/internal/tagencoding
 go.opencensus.io/plugin/ocgrpc
 # golang.org/x/net v0.0.0-20180826012351-8a410e7b638d
 golang.org/x/net/context
+golang.org/x/net/context/ctxhttp
 golang.org/x/net/http2
 golang.org/x/net/trace
-golang.org/x/net/context/ctxhttp
 golang.org/x/net/http/httpguts
 golang.org/x/net/http2/hpack
 golang.org/x/net/idna
@@ -112,10 +115,12 @@ google.golang.org/appengine/internal/log
 google.golang.org/appengine/internal/remote_api
 google.golang.org/appengine/internal/socket
 # google.golang.org/genproto v0.0.0-20180817151627-c66870c02cf8
+google.golang.org/genproto/googleapis/api/monitoredres
+google.golang.org/genproto/googleapis/logging/type
+google.golang.org/genproto/googleapis/logging/v2
 google.golang.org/genproto/googleapis/api/distribution
 google.golang.org/genproto/googleapis/api/label
 google.golang.org/genproto/googleapis/api/metric
-google.golang.org/genproto/googleapis/api/monitoredres
 google.golang.org/genproto/googleapis/devtools/cloudtrace/v2
 google.golang.org/genproto/googleapis/monitoring/v3
 google.golang.org/genproto/googleapis/rpc/status

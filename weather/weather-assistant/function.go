@@ -5,53 +5,33 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"net/url"
 	"os"
 	"sync"
 
-	"contrib.go.opencensus.io/exporter/stackdriver"
+	"cloud.google.com/go/logging"
 	"contrib.go.opencensus.io/exporter/stackdriver/propagation"
 	"go.opencensus.io/trace"
 )
 
-func init() {
-	config = &configuration{}
-}
-
 var (
-	config        *configuration
+	logger        *logging.Logger
+	once          sync.Once
 	weatherApiUrl string
 )
 
 // configFunc sets the global configuration; it's overridden in tests.
 var configFunc = defaultConfigFunc
 
-type configuration struct {
-	once sync.Once
-	err  error
-}
-
-func (c *configuration) Error() error {
-	return c.err
-}
-
-type envError struct {
-	name string
-}
-
-func (e *envError) Error() string {
-	return fmt.Sprintf("%s environment variable unset or missing", e.name)
-}
-
 func F(w http.ResponseWriter, r *http.Request) {
-	config.once.Do(func() { configFunc() })
-	if config.Error() != nil {
-		log.Println(config.Error())
-		http.Error(w, "", http.StatusInternalServerError)
-		return
-	}
+	once.Do(func() {
+		if err := configFunc(); err != nil {
+			panic(err)
+		}
+	})
+
+	defer logger.Flush()
 
 	ctx := r.Context()
 	var span *trace.Span
@@ -66,18 +46,24 @@ func F(w http.ResponseWriter, r *http.Request) {
 		defer span.End()
 	}
 
-	body, err := ioutil.ReadAll(r.Body)
+	data, err := ioutil.ReadAll(r.Body)
 	if err != nil {
-		log.Println(err)
+		logger.Log(logging.Entry{
+			Payload:  err.Error(),
+			Severity: logging.Error,
+		})
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 	r.Body.Close()
 
 	var webhookRequest WebhookRequest
-	err = json.Unmarshal(body, &webhookRequest)
+	err = json.Unmarshal(data, &webhookRequest)
 	if err != nil {
-		log.Println(err)
+		logger.Log(logging.Entry{
+			Payload:  err.Error(),
+			Severity: logging.Error,
+		})
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
@@ -86,7 +72,10 @@ func F(w http.ResponseWriter, r *http.Request) {
 
 	weather, err := getWeather(ctx, parameters["event"])
 	if err != nil {
-		log.Println(err)
+		logger.Log(logging.Entry{
+			Payload:  err.Error(),
+			Severity: logging.Error,
+		})
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
@@ -96,9 +85,12 @@ func F(w http.ResponseWriter, r *http.Request) {
 			weather.Location, weather.Temperature),
 	}
 
-	data, err := json.MarshalIndent(response, "", " ")
+	data, err = json.MarshalIndent(response, "", " ")
 	if err != nil {
-		log.Println(err)
+		logger.Log(logging.Entry{
+			Payload:  err.Error(),
+			Severity: logging.Error,
+		})
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
@@ -136,25 +128,22 @@ func getWeather(ctx context.Context, event string) (*Weather, error) {
 	return w, nil
 }
 
-func defaultConfigFunc() {
+func defaultConfigFunc() error {
+	var err error
+
 	weatherApiUrl = os.Getenv("WEATHER_API_URL")
 	if weatherApiUrl == "" {
-		config.err = &envError{"WEATHER_API_URL"}
-		return
+		return fmt.Errorf("WEATHER_API_URL environment variable unset or missing")
 	}
 
-	projectId := os.Getenv("GCP_PROJECT")
-	if projectId == "" {
-		config.err = &envError{"GCP_PROJECT"}
-		return
+	if err := EnableStackdriverTrace(); err != nil {
+		return err
 	}
 
-	stackdriverExporter, err := stackdriver.NewExporter(stackdriver.Options{ProjectID: projectId})
+	logger, err = NewStackdriverLogger()
 	if err != nil {
-		config.err = err
-		return
+		return err
 	}
 
-	trace.RegisterExporter(stackdriverExporter)
-	trace.ApplyConfig(trace.Config{DefaultSampler: trace.AlwaysSample()})
+	return nil
 }

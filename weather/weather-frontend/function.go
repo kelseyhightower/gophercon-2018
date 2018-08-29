@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"text/template"
@@ -17,10 +18,11 @@ import (
 )
 
 var (
-	htmlTemplate *template.Template
-	httpClient   *http.Client
-	logger       *logging.Logger
-	once         sync.Once
+	htmlTemplate  *template.Template
+	httpClient    *http.Client
+	logger        *logging.Logger
+	once          sync.Once
+	weatherApiUrl string
 )
 
 // configFunc sets the global configuration; it's overridden in tests.
@@ -64,9 +66,7 @@ func F(w http.ResponseWriter, r *http.Request) {
 		event = "GopherCon"
 	}
 
-	apiUrl := "https://us-central1-hightowerlabs.cloudfunctions.net/weather-api"
-
-	u := fmt.Sprintf("%s/api?event=%s", apiUrl, url.QueryEscape(event))
+	u := fmt.Sprintf("%s/api?event=%s", weatherApiUrl, url.QueryEscape(event))
 
 	request, err := http.NewRequest("GET", u, nil)
 	if err != nil {
@@ -149,6 +149,11 @@ func F(w http.ResponseWriter, r *http.Request) {
 
 func defaultConfigFunc() error {
 	var err error
+
+	weatherApiUrl = os.Getenv("WEATHER_API_URL")
+	if weatherApiUrl == "" {
+		return fmt.Errorf("WEATHER_API_URL environment variable unset or missing")
+	}
 
 	if err := EnableStackdriverTrace(); err != nil {
 		return err
